@@ -7,7 +7,6 @@ import re
 import os
 from datetime import datetime
 from dataclasses import dataclass
-from typing import Optional
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID = os.environ.get("CHAT_ID", "")
@@ -96,11 +95,51 @@ def scrape(store, url, prefix):
     log.info(f"{store}: {len(deals)} ofertas")
     return deals
 
+def scrape_idealo():
+    deals = []
+    urls = [
+        "https://www.idealo.es/cat/7946/zapatillas.html?q=&sortType=RANKING&minDiscount=60",
+        "https://www.idealo.es/cat/12519/ropa-de-hombre.html?q=&sortType=RANKING&minDiscount=60",
+        "https://www.idealo.es/cat/12518/ropa-de-mujer.html?q=&sortType=RANKING&minDiscount=60",
+        "https://www.idealo.es/cat/7943/zapatos-de-mujer.html?q=&sortType=RANKING&minDiscount=60",
+        "https://www.idealo.es/cat/7944/zapatos-de-hombre.html?q=&sortType=RANKING&minDiscount=60",
+    ]
+    for url in urls:
+        soup = get_soup(url)
+        if not soup:
+            continue
+        for item in soup.select("[class*='offer'], [class*='product'], [class*='item']")[:20]:
+            try:
+                name_el = item.select_one("h2, h3, [class*='name'], [class*='title']")
+                orig_el = item.select_one("[class*='oldPrice'], [class*='original'], del, s")
+                sale_el = item.select_one("[class*='price'], [class*='currentPrice']")
+                link_el = item.select_one("a[href]")
+                disc_el = item.select_one("[class*='discount'], [class*='saving'], [class*='percent']")
+                if not name_el or not link_el:
+                    continue
+                orig = parse_price(orig_el.get_text()) if orig_el else 0
+                sale = parse_price(sale_el.get_text()) if sale_el else 0
+                pct = calc_discount(orig, sale) if (orig and sale) else 0
+                if not pct and disc_el:
+                    m = re.search(r"(\d+)", disc_el.get_text())
+                    pct = int(m.group(1)) if m else 0
+                if pct < MIN_DISCOUNT:
+                    continue
+                href = link_el["href"]
+                if not href.startswith("http"):
+                    href = "https://www.idealo.es" + href
+                deals.append(Deal("Idealo", name_el.get_text(strip=True)[:60], href, orig, sale, pct))
+            except:
+                continue
+    log.info(f"Idealo: {len(deals)} ofertas")
+    return deals
+
 def scrape_amazon():
     deals = []
     urls = [
         "https://www.amazon.es/s?rh=n%3A1571281031%2Cp_n_pct-off-with-tax%3A13632751031&s=price-asc-rank",
         "https://www.amazon.es/s?rh=n%3A2454172031%2Cp_n_pct-off-with-tax%3A13632751031&s=price-asc-rank",
+        "https://www.amazon.es/s?rh=n%3A2238820031%2Cp_n_pct-off-with-tax%3A13632751031&s=price-asc-rank",
     ]
     for url in urls:
         soup = get_soup(url)
@@ -126,7 +165,7 @@ def scrape_amazon():
                 href = link_el["href"]
                 if not href.startswith("http"):
                     href = "https://www.amazon.es" + href
-                deals.append(Deal("Amazon Moda", name_el.get_text(strip=True)[:60], href, orig, sale, pct))
+                deals.append(Deal("Amazon", name_el.get_text(strip=True)[:60], href, orig, sale, pct))
             except:
                 continue
     log.info(f"Amazon: {len(deals)} ofertas")
@@ -169,7 +208,13 @@ def check_and_alert():
         except Exception as e:
             log.error(f"Error en {store}: {e}")
     try:
+        all_deals.extend(scrape_idealo())
+        time.sleep(2)
+    except Exception as e:
+        log.error(f"Error en Idealo: {e}")
+    try:
         all_deals.extend(scrape_amazon())
+        time.sleep(2)
     except Exception as e:
         log.error(f"Error en Amazon: {e}")
 
@@ -199,7 +244,7 @@ def check_and_alert():
         time.sleep(1)
 
 def main():
-    send_telegram(f"🤖 <b>Deal Radar Bot activado</b>\nRastreando <b>23 tiendas</b>\nDescuento minimo: <b>{MIN_DISCOUNT}%</b>")
+    send_telegram(f"🤖 <b>Deal Radar Bot activado</b>\nRastreando <b>24 tiendas</b>\nDescuento minimo: <b>{MIN_DISCOUNT}%</b>")
     for hour in CHECK_HOURS:
         schedule.every().day.at(f"{hour:02d}:00").do(check_and_alert)
     check_and_alert()
