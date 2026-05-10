@@ -96,6 +96,42 @@ def scrape(store, url, prefix):
     log.info(f"{store}: {len(deals)} ofertas")
     return deals
 
+def scrape_amazon():
+    deals = []
+    urls = [
+        "https://www.amazon.es/s?rh=n%3A1571281031%2Cp_n_pct-off-with-tax%3A13632751031&s=price-asc-rank",
+        "https://www.amazon.es/s?rh=n%3A2454172031%2Cp_n_pct-off-with-tax%3A13632751031&s=price-asc-rank",
+    ]
+    for url in urls:
+        soup = get_soup(url)
+        if not soup:
+            continue
+        for item in soup.select("[data-component-type='s-search-result']")[:20]:
+            try:
+                name_el = item.select_one("h2 a span")
+                orig_el = item.select_one(".a-price.a-text-price span.a-offscreen")
+                sale_el = item.select_one(".a-price-whole")
+                link_el = item.select_one("h2 a")
+                badge_el = item.select_one(".a-badge-text")
+                if not name_el or not link_el:
+                    continue
+                orig = parse_price(orig_el.get_text()) if orig_el else 0
+                sale = parse_price(sale_el.get_text()) if sale_el else 0
+                pct = calc_discount(orig, sale) if (orig and sale) else 0
+                if not pct and badge_el:
+                    m = re.search(r"(\d+)", badge_el.get_text())
+                    pct = int(m.group(1)) if m else 0
+                if pct < MIN_DISCOUNT:
+                    continue
+                href = link_el["href"]
+                if not href.startswith("http"):
+                    href = "https://www.amazon.es" + href
+                deals.append(Deal("Amazon Moda", name_el.get_text(strip=True)[:60], href, orig, sale, pct))
+            except:
+                continue
+    log.info(f"Amazon: {len(deals)} ofertas")
+    return deals
+
 TIENDAS = [
     ("Zalando Mujer Ropa",    "https://www.zalando.es/ropa-de-mujer/?sale=true",         "https://www.zalando.es"),
     ("Zalando Hombre Ropa",   "https://www.zalando.es/ropa-de-hombre/?sale=true",        "https://www.zalando.es"),
@@ -103,13 +139,13 @@ TIENDAS = [
     ("Zalando Hombre Zapatos","https://www.zalando.es/zapatos-de-hombre/?sale=true",     "https://www.zalando.es"),
     ("Mango Outlet",          "https://www.mangooutlet.com/es/es/sale",                  "https://www.mangooutlet.com"),
     ("Fifty Outlet",          "https://fiftyoutlet.com/es/es/mujer/sale",                "https://fiftyoutlet.com"),
-    ("El Corte Inglés",       "https://www.elcorteingles.es/moda/rebajas/",              "https://www.elcorteingles.es"),
+    ("El Corte Ingles",       "https://www.elcorteingles.es/moda/rebajas/",              "https://www.elcorteingles.es"),
     ("Nike",                  "https://www.nike.com/es/w/sale-3yaep",                    "https://www.nike.com"),
     ("Adidas",                "https://www.adidas.es/sale-calzado",                      "https://www.adidas.es"),
     ("Puma",                  "https://es.puma.com/es/outlet",                           "https://es.puma.com"),
     ("New Balance",           "https://www.newbalance.es/sale/",                         "https://www.newbalance.es"),
     ("Converse",              "https://www.converse.com/es/sale/",                       "https://www.converse.com"),
-    ("Levis",                "https://www.levi.com/ES/es_ES/sale",                      "https://www.levi.com"),
+    ("Levis",                 "https://www.levi.com/ES/es_ES/sale",                      "https://www.levi.com"),
     ("Tommy Hilfiger",        "https://www.tommy.com/es/es/outlet",                      "https://www.tommy.com"),
     ("Calvin Klein",          "https://www.calvinklein.es/sale",                         "https://www.calvinklein.es"),
     ("Under Armour",          "https://www.underarmour.com/es-es/c/sale/",               "https://www.underarmour.com"),
@@ -117,6 +153,8 @@ TIENDAS = [
     ("Private Sport Shop",    "https://www.privatesportshop.es/",                        "https://www.privatesportshop.es"),
     ("Outletinn",             "https://www.tradeinn.com/outletinn/es",                   "https://www.tradeinn.com"),
     ("ASOS",                  "https://www.asos.com/es/sale/",                           "https://www.asos.com"),
+    ("Deporte Outlet",        "https://www.deporte-outlet.es/ofertas",                   "https://www.deporte-outlet.es"),
+    ("Sports Direct",         "https://www.sportsdirect.com/sale",                       "https://www.sportsdirect.com"),
 ]
 
 sent_deals = set()
@@ -130,6 +168,10 @@ def check_and_alert():
             time.sleep(2)
         except Exception as e:
             log.error(f"Error en {store}: {e}")
+    try:
+        all_deals.extend(scrape_amazon())
+    except Exception as e:
+        log.error(f"Error en Amazon: {e}")
 
     new_deals = [d for d in all_deals if d.key() not in sent_deals]
     for d in new_deals:
@@ -157,7 +199,7 @@ def check_and_alert():
         time.sleep(1)
 
 def main():
-    send_telegram(f"🤖 <b>Deal Radar Bot activado</b>\nRastreando <b>{len(TIENDAS)} tiendas</b>\nDescuento mínimo: <b>{MIN_DISCOUNT}%</b>")
+    send_telegram(f"🤖 <b>Deal Radar Bot activado</b>\nRastreando <b>23 tiendas</b>\nDescuento minimo: <b>{MIN_DISCOUNT}%</b>")
     for hour in CHECK_HOURS:
         schedule.every().day.at(f"{hour:02d}:00").do(check_and_alert)
     check_and_alert()
