@@ -11,7 +11,7 @@ from typing import Optional
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID = os.environ.get("CHAT_ID", "")
-MIN_DISCOUNT = 70
+MIN_DISCOUNT = 60
 CHECK_HOURS = [8, 12, 16, 20]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
